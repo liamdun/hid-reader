@@ -1,0 +1,1343 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fob Reader</title>
+<style>
+:root {
+  --bg: #0e1116;
+  --panel: #161b22;
+  --panel-2: #1c232d;
+  --line: #2a323d;
+  --text: #e6edf3;
+  --dim: #8b97a6;
+  --accent: #4cc2ff;
+  --ok: #3fb950;
+  --warn: #d29922;
+  --bad: #f85149;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #f4f6f8; --panel: #fff; --panel-2: #eef1f5; --line: #d6dce4;
+    --text: #10151c; --dim: #5a6675; --accent: #0a66c2;
+    --ok: #1a7f37; --warn: #9a6700; --bad: #cf222e;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  min-height: 100vh;
+}
+
+header {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding: 12px 20px; border-bottom: 1px solid var(--line); background: var(--panel);
+}
+header h1 { font-size: 17px; margin: 0; font-weight: 650; letter-spacing: -0.01em; }
+header .spacer { flex: 1; }
+
+.pill {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 4px 11px; border-radius: 999px; font-size: 13px;
+  background: var(--panel-2); border: 1px solid var(--line); color: var(--dim);
+}
+.pill .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--dim); }
+.pill.live { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 40%, var(--line)); }
+.pill.live .dot { background: var(--ok); animation: pulse 2s ease-in-out infinite; }
+.pill.bad { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 40%, var(--line)); }
+.pill.bad .dot { background: var(--bad); }
+@keyframes pulse { 50% { opacity: 0.35; } }
+
+button, select, input {
+  font: inherit; color: var(--text); background: var(--panel-2);
+  border: 1px solid var(--line); border-radius: 7px; padding: 6px 10px;
+}
+button { cursor: pointer; }
+button:hover { border-color: var(--accent); }
+button:active { transform: translateY(1px); }
+.ghost { background: transparent; color: var(--dim); font-size: 13px; }
+
+main { max-width: 1000px; margin: 0 auto; padding: 22px 20px 60px; }
+
+/* ---- current read ---------------------------------------------------- */
+.current {
+  background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+  padding: 26px 28px; margin-bottom: 26px;
+}
+.current.flash { animation: flash 0.45s ease-out; }
+@keyframes flash {
+  from { border-color: var(--accent); box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 22%, transparent); }
+}
+.current.error { border-color: var(--bad); }
+
+.waiting { color: var(--dim); font-size: 17px; text-align: center; padding: 26px 0; }
+.waiting strong { color: var(--text); font-weight: 600; }
+.waiting .sub { display: block; font-size: 14px; margin-top: 8px; }
+
+.readout { display: flex; gap: 40px; flex-wrap: wrap; }
+.field { min-width: 180px; }
+.field .label {
+  display: block; font-size: 12px; letter-spacing: 0.09em;
+  text-transform: uppercase; color: var(--dim); margin-bottom: 4px;
+}
+.field .value {
+  font-family: var(--mono); font-size: clamp(38px, 8vw, 66px); line-height: 1.05;
+  font-weight: 600; letter-spacing: -0.02em; background: none; border: none;
+  padding: 0; text-align: left; color: var(--text); cursor: copy;
+}
+.field .value:hover { color: var(--accent); border: none; }
+.field .value.none { color: var(--dim); font-size: 34px; }
+
+.meta {
+  display: flex; gap: 8px; flex-wrap: wrap; align-items: center;
+  margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--line);
+  font-size: 13px; color: var(--dim);
+}
+.tag {
+  font-family: var(--mono); font-size: 12px; padding: 3px 8px;
+  border-radius: 5px; background: var(--panel-2); border: 1px solid var(--line);
+}
+.tag.copyable { cursor: copy; }
+.tag.copyable:hover { border-color: var(--accent); color: var(--accent); }
+.tag.ok { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 35%, var(--line)); }
+.tag.bad { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 35%, var(--line)); }
+.tag.warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 35%, var(--line)); }
+
+.alts { margin-top: 12px; font-size: 13px; color: var(--dim); }
+.alts .alt {
+  display: inline-block; margin: 4px 6px 0 0; padding: 3px 9px; border-radius: 5px;
+  background: transparent; border: 1px dashed var(--line); font-family: var(--mono); font-size: 12px;
+}
+.alts .alt:hover { border-style: solid; border-color: var(--accent); }
+
+/* ---- history --------------------------------------------------------- */
+.list-head {
+  display: flex; align-items: center; gap: 10px;
+  margin-bottom: 10px; padding: 0 4px;
+}
+.list-head h2 { font-size: 14px; margin: 0; color: var(--dim); font-weight: 600; }
+.list-head .spacer { flex: 1; }
+
+ol.history { list-style: none; margin: 0; padding: 0; }
+ol.history li {
+  display: grid; grid-template-columns: 74px 1fr 1fr 130px auto;
+  gap: 14px; align-items: baseline;
+  padding: 11px 14px; border: 1px solid var(--line); border-radius: 9px;
+  background: var(--panel); margin-bottom: 7px;
+}
+ol.history .time { font-family: var(--mono); font-size: 12px; color: var(--dim); }
+ol.history .num { font-family: var(--mono); font-size: 19px; font-weight: 600; }
+ol.history .num small {
+  display: block; font-size: 11px; font-weight: 400; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--dim);
+}
+ol.history .fmt { font-size: 12px; color: var(--dim); font-family: var(--mono); }
+ol.history .rpt { font-size: 12px; color: var(--dim); }
+ol.history .empty-note { color: var(--dim); }
+ol.history li.placeholder { display: block; color: var(--dim); font-size: 13px; text-align: center; }
+
+/* ---- controls -------------------------------------------------------- */
+.controls {
+  margin-top: 34px; padding: 18px 20px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+}
+.controls h2 { font-size: 13px; margin: 0 0 14px; color: var(--dim); text-transform: uppercase; letter-spacing: 0.08em; }
+.row { display: flex; gap: 18px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 14px; }
+.ctl { display: flex; flex-direction: column; gap: 5px; }
+.ctl label { font-size: 12px; color: var(--dim); }
+.ctl .hint { font-size: 11px; color: var(--dim); max-width: 260px; }
+.check { display: flex; align-items: center; gap: 7px; font-size: 13px; color: var(--dim); }
+.check input { width: 16px; height: 16px; padding: 0; }
+
+.devnote {
+  font-size: 12px; color: var(--dim); font-family: var(--mono);
+  margin-top: 6px; word-break: break-all;
+}
+footer {
+  max-width: 1000px; margin: 0 auto; padding: 0 20px 50px;
+  font-size: 12.5px; color: var(--dim); line-height: 1.7;
+}
+footer code { font-family: var(--mono); background: var(--panel-2); padding: 1px 5px; border-radius: 4px; }
+
+.toast {
+  position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%);
+  background: var(--panel-2); border: 1px solid var(--line); color: var(--text);
+  padding: 9px 16px; border-radius: 999px; font-size: 13px;
+  opacity: 0; pointer-events: none; transition: opacity 0.18s;
+}
+.toast.show { opacity: 1; }
+
+@media (max-width: 640px) {
+  ol.history li { grid-template-columns: 1fr 1fr; }
+  ol.history .time, ol.history .fmt, ol.history .rpt { grid-column: 1 / -1; }
+  .readout { gap: 22px; }
+}
+
+.devnote.warn-note { color: var(--warn); }
+</style>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='14' font-size='14'>&#128179;</text></svg>">
+</head>
+<body>
+
+<header>
+  <h1>Fob Reader</h1>
+  <span class="pill" id="status"><span class="dot"></span>Starting…</span>
+  <span class="spacer"></span>
+  <span class="pill" id="count"></span>
+</header>
+
+<main>
+  <section class="current" id="current"></section>
+
+  <div class="list-head">
+    <h2>Previous reads</h2>
+    <span class="spacer"></span>
+    <button class="ghost" id="copyAll">Copy all as CSV</button>
+    <button class="ghost" id="clear">Clear list</button>
+  </div>
+  <ol class="history" id="history"></ol>
+
+  <section class="controls">
+    <h2>Reader setup</h2>
+
+    <div class="row">
+      <div class="ctl">
+        <label for="input">Reader sends</label>
+        <select id="input">
+          <option value="auto">Auto-detect</option>
+          <option value="dec">A decimal number</option>
+          <option value="hex">A hex number</option>
+          <option value="split">Facility code and card number, separated</option>
+          <option value="cn">Card number only</option>
+        </select>
+        <span class="hint">Auto reads anything with A–F as hex. Force hex if your reader
+          sends hex digits that happen to all be 0–9.</span>
+      </div>
+
+      <div class="ctl">
+        <label for="format">Card format</label>
+        <select id="format">
+          <option value="auto">Auto-detect (guess from the value)</option>
+        </select>
+        <span class="hint">Leave on auto until you see a wrong split, then lock it —
+          or click one of the “Or, read as” chips on a read.</span>
+      </div>
+
+      <div class="ctl">
+        <label for="manual">Paste or type a value</label>
+        <input id="manual" size="22" placeholder="e.g. 2004E5A7, then Enter" autocomplete="off">
+      </div>
+    </div>
+
+    <div class="row">
+      <label class="check"><input type="checkbox" id="sound"> Beep on each read</label>
+      <label class="check"><input type="checkbox" id="dedupe"> Merge repeats while a card is held</label>
+      <button class="ghost" id="sample">Try a sample scan</button>
+    </div>
+
+    <div class="row">
+      <div class="ctl" style="flex:1 1 100%">
+        <label>Keystrokes reaching this page</label>
+        <div class="devnote" id="wedgeMonitor"></div>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="ctl">
+        <label>Non-keyboard readers</label>
+        <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+          <button id="hidBtn">Connect HID reader</button>
+          <button id="serialBtn">Connect serial reader</button>
+          <select id="baud" title="Serial baud rate">
+            <option>9600</option><option>19200</option><option>38400</option>
+            <option>57600</option><option>115200</option>
+          </select>
+        </div>
+        <span class="hint" style="max-width:none">The picker lists every HID device on the PC, not
+          just readers. Yours is usually named for its maker — RFIDeas, HID Global, OMNIKEY.
+          Names like “USB receiver” or “USB Input Device” are normally a wireless dongle or a
+          plain keyboard; Chrome hides keyboard and mouse devices from WebHID, so picking one
+          connects but never reads anything.</span>
+        <div id="hidNote"></div>
+        <div class="devnote" id="serialNote"></div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <p><strong>Keyboard-wedge readers need no setup.</strong> If your reader types the card
+  number into a text box in any other program, it works here — keep this window focused and
+  tap a card. Nothing to click.</p>
+  <p><strong>WebHID / Web Serial</strong> are for readers that don’t type. They need Chrome
+  or Edge, and the page must be served over <code>https</code> or <code>localhost</code>.
+  A reader Windows has claimed as a keyboard or as a PC/SC smartcard reader can’t be opened
+  this way — use keyboard mode for the former; the latter needs a native helper, no browser
+  can reach it.</p>
+  <p>Reads are held in memory only. Refreshing the page clears the list.</p>
+</footer>
+
+<div class="toast" id="toast"></div>
+
+<script>
+'use strict';
+/*
+ * wiegand.js - pure decoding logic, no DOM.
+ *
+ * Readers hand us one opaque number: the raw Wiegand bit stream the card sent.
+ * Everything interesting (facility code, card number) comes from slicing that
+ * number according to the card format, so this file is just bit arithmetic.
+ *
+ * BigInt throughout - Corporate 1000 48-bit does not fit in a JS number.
+ */
+(function (root, factory) {
+  var api = factory();
+  if (typeof module === 'object' && module.exports) { module.exports = api; }
+  else { root.Wiegand = api; }
+})(typeof globalThis !== 'undefined' ? globalThis : this, function () {
+
+  // fc/cn are [shiftFromLsb, widthInBits]. parity entries are
+  // [parityBitIndex, highDataBit, lowDataBit, 'even'|'odd'], all indexed from
+  // the LSB. Formats without a parity entry are decoded but not checked.
+  var FORMATS = [
+    {
+      id: 'h10301', name: '26-bit H10301', short: '26-bit', bits: 26,
+      fc: [17, 8], cn: [1, 16],
+      parity: [[25, 24, 13, 'even'], [0, 12, 1, 'odd']],
+      note: 'The standard 26-bit format. By far the most common.'
+    },
+    {
+      id: 'd10202', name: '33-bit D10202', short: '33-bit', bits: 33,
+      fc: [25, 7], cn: [1, 24],
+      note: 'Kantech / D10202.'
+    },
+    {
+      id: 'h10306', name: '34-bit H10306', short: '34-bit', bits: 34,
+      fc: [17, 16], cn: [1, 16],
+      parity: [[33, 32, 17, 'even'], [0, 16, 1, 'odd']],
+      note: '16-bit facility code, 16-bit card number.'
+    },
+    {
+      id: 'c1k35', name: '35-bit Corporate 1000', short: '35-bit C1k', bits: 35,
+      fc: [21, 12], cn: [1, 20],
+      note: '12-bit company code, 20-bit card number.'
+    },
+    {
+      id: 'h10304', name: '37-bit H10304', short: '37-bit', bits: 37,
+      fc: [20, 16], cn: [1, 19],
+      note: '16-bit facility code, 19-bit card number.'
+    },
+    {
+      id: 'h10302', name: '37-bit H10302', short: '37-bit (no FC)', bits: 37,
+      fc: null, cn: [1, 35],
+      note: '35-bit card number, no facility code.'
+    },
+    {
+      id: 'c1k48', name: '48-bit Corporate 1000', short: '48-bit C1k', bits: 48,
+      fc: [24, 22], cn: [1, 23],
+      note: '22-bit company code, 23-bit card number.'
+    },
+    {
+      id: 'raw', name: 'Raw / unformatted', short: 'raw', bits: 0,
+      fc: null, cn: null,
+      note: 'No format applied - the number is shown exactly as the reader sent it.'
+    }
+  ];
+
+  function byId(id) {
+    for (var i = 0; i < FORMATS.length; i++) {
+      if (FORMATS[i].id === id) { return FORMATS[i]; }
+    }
+    return null;
+  }
+
+  function mask(width) { return (1n << BigInt(width)) - 1n; }
+
+  function bitLength(value) {
+    if (value <= 0n) { return value === 0n ? 1 : 0; }
+    return value.toString(2).length;
+  }
+
+  function bitAt(value, index) {
+    return Number((value >> BigInt(index)) & 1n);
+  }
+
+  function countOnes(value, high, low) {
+    var total = 0;
+    for (var i = low; i <= high; i++) { total += bitAt(value, i); }
+    return total;
+  }
+
+  // Even parity: the parity bit makes the total count of 1s even.
+  // Odd parity: it makes the total odd.
+  function expectedParity(value, high, low, kind) {
+    var ones = countOnes(value, high, low) % 2;
+    return kind === 'even' ? ones : ones ^ 1;
+  }
+
+  function checkParity(value, format) {
+    if (!format.parity) { return null; }
+    for (var i = 0; i < format.parity.length; i++) {
+      var spec = format.parity[i];
+      if (bitAt(value, spec[0]) !== expectedParity(value, spec[1], spec[2], spec[3])) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  function toHex(value, bits) {
+    var digits = bits ? Math.ceil(bits / 4) : 0;
+    var hex = value.toString(16).toUpperCase();
+    while (hex.length < digits) { hex = '0' + hex; }
+    return hex;
+  }
+
+  /**
+   * Slice a raw Wiegand value into facility code and card number.
+   * Returns null only if the format id is unknown.
+   */
+  function decode(raw, formatId) {
+    var format = byId(formatId);
+    if (!format) { return null; }
+
+    var used = bitLength(raw);
+    if (format.id === 'raw') {
+      return {
+        formatId: format.id, formatName: format.name, formatShort: format.short,
+        bits: used, fc: null, cn: raw, parity: null, oversize: false,
+        hex: toHex(raw, 0), dec: raw.toString()
+      };
+    }
+
+    return {
+      formatId: format.id,
+      formatName: format.name,
+      formatShort: format.short,
+      bits: format.bits,
+      fc: format.fc ? (raw >> BigInt(format.fc[0])) & mask(format.fc[1]) : null,
+      cn: (raw >> BigInt(format.cn[0])) & mask(format.cn[1]),
+      parity: checkParity(raw, format),
+      // The value carries more bits than this format holds, so the slice above
+      // silently dropped some. Always a sign the wrong format is selected.
+      oversize: used > format.bits,
+      hex: toHex(raw, format.bits),
+      dec: raw.toString()
+    };
+  }
+
+  /**
+   * Guess the card format from the value alone. containerBits, when known
+   * (e.g. an 8-digit hex string is a 32-bit container), rules out formats that
+   * are wider than what the reader actually sent.
+   *
+   * This is a guess, not a measurement - a 35-bit card whose top bits happen to
+   * be zero is indistinguishable from a 26-bit one. Parity is the tie-breaker
+   * where a format defines it; callers should surface alternates either way.
+   */
+  function detect(raw, containerBits) {
+    var need = bitLength(raw);
+    var candidates = FORMATS.filter(function (f) {
+      return f.id !== 'raw' && f.bits >= need;
+    });
+    if (!candidates.length) { return 'raw'; }
+
+    if (containerBits) {
+      var fits = candidates.filter(function (f) { return f.bits <= containerBits; });
+      if (fits.length) { candidates = fits; }
+    }
+
+    var best = null;
+    for (var i = 0; i < candidates.length; i++) {
+      var f = candidates[i];
+      var score = (checkParity(raw, f) === true ? 0 : 1) * 1000 + f.bits;
+      if (!best || score < best.score) { best = { score: score, id: f.id }; }
+    }
+    return best.id;
+  }
+
+  /** Every other format the value could plausibly be, for the "or is it..." row. */
+  function alternates(raw, chosenId, limit) {
+    var need = bitLength(raw);
+    var out = [];
+    for (var i = 0; i < FORMATS.length && out.length < (limit || 3); i++) {
+      var f = FORMATS[i];
+      if (f.id === 'raw' || f.id === chosenId || f.bits < need) { continue; }
+      out.push(decode(raw, f.id));
+    }
+    return out;
+  }
+
+  var SPLIT_RE = /^(\d+)\s*[,;:\/\|\- \t]\s*(\d+)$/;
+
+  /**
+   * Turn whatever the reader typed/sent into a raw value.
+   *
+   * mode: 'auto' | 'hex' | 'dec' | 'split' | 'cn'
+   *  - split: the reader already separated facility code and card number
+   *  - cn:    the reader sends only a card number, no facility code
+   */
+  function parseScan(text, mode) {
+    if (text == null) { return null; }
+    var s = String(text).trim().replace(/^0[xX]/, '');
+    if (!s) { return null; }
+    mode = mode || 'auto';
+
+    var split = SPLIT_RE.exec(s);
+    if (mode === 'split' || (mode === 'auto' && split)) {
+      if (!split) { return null; }
+      return { kind: 'split', fc: BigInt(split[1]), cn: BigInt(split[2]) };
+    }
+
+    s = s.replace(/[\s_\-]/g, '');
+    if (!/^[0-9a-fA-F]+$/.test(s)) { return null; }
+
+    if (mode === 'cn') {
+      if (!/^\d+$/.test(s)) { return null; }
+      return { kind: 'cn', cn: BigInt(s) };
+    }
+
+    // In auto mode a string of pure digits is read as decimal. A hex value that
+    // happens to contain no A-F is ambiguous and will land here; that is what
+    // the explicit 'hex' mode is for.
+    var isHex = mode === 'hex' || (mode === 'auto' && /[a-fA-F]/.test(s));
+    if (isHex) {
+      return { kind: 'raw', raw: BigInt('0x' + s), containerBits: s.length * 4 };
+    }
+    if (!/^\d+$/.test(s)) { return null; }
+    return { kind: 'raw', raw: BigInt(s), containerBits: 0 };
+  }
+
+  /** Big-endian bytes (a WebHID input report) -> one raw value. */
+  function bytesToValue(bytes) {
+    var value = 0n;
+    for (var i = 0; i < bytes.length; i++) {
+      value = (value << 8n) | BigInt(bytes[i] & 0xff);
+    }
+    return value;
+  }
+
+  return {
+    FORMATS: FORMATS,
+    byId: byId,
+    decode: decode,
+    detect: detect,
+    alternates: alternates,
+    parseScan: parseScan,
+    bytesToValue: bytesToValue,
+    bitLength: bitLength,
+    checkParity: checkParity,
+    toHex: toHex
+  };
+});
+</script>
+<script>
+'use strict';
+/*
+ * app.js - wiring between the reader and the screen.
+ *
+ * Three input paths, all funnelling into commitText()/commitValue():
+ *   1. keyboard wedge - a window-level key listener, no focus required
+ *   2. WebHID         - vendor HID readers, Chrome/Edge
+ *   3. WebSerial      - USB-serial readers, Chrome/Edge
+ *
+ * Reads live in memory only; nothing is written to storage but the settings.
+ */
+(function () {
+  var W = window.Wiegand;
+
+  var SETTINGS_KEY = 'hid-reader.settings';
+  var GAP_MS = 500;     // silence long enough to mean "this is a new scan"
+  var IDLE_MS = 220;    // silence that ends a scan the reader didn't terminate
+  var MIN_CHARS = 3;
+  var REPEAT_MS = 3000; // same card again within this window = held on reader
+  var MAX_ROWS = 200;
+
+  var settings = {
+    input: 'auto',
+    format: 'auto',
+    sound: true,
+    dedupe: true
+  };
+
+  var reads = [];
+  var seq = 0;
+  var buffer = '';
+  var lastKeyAt = 0;
+  var idleTimer = null;
+  var hidDevice = null;
+  var hidReports = 0;
+  var hidSilenceTimer = null;
+  var wedgeKeys = 0;
+  var wedgeTail = '';
+  var serialPort = null;
+  var serialAbort = null;
+
+  var el = {};
+
+  // ---- helpers ---------------------------------------------------------
+
+  function $(id) { return document.getElementById(id); }
+
+  function clockTime(date) {
+    return date.toTimeString().slice(0, 8);
+  }
+
+  function groupDigits(value) {
+    // Card numbers are read aloud and typed by hand; thin grouping helps.
+    var s = String(value);
+    // U+2009 thin space: readable at a glance without looking like two numbers.
+    // Click-to-copy always uses the ungrouped value, so this is display-only.
+    return s.length > 4 ? s.replace(/\B(?=(\d{3})+(?!\d))/g, '\u2009') : s;
+  }
+
+  function toast(message) {
+    el.toast.textContent = message;
+    el.toast.classList.add('show');
+    clearTimeout(toast._t);
+    toast._t = setTimeout(function () { el.toast.classList.remove('show'); }, 1400);
+  }
+
+  function copy(text, label) {
+    var done = function () { toast((label || 'Copied') + ': ' + text); };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done, function () { toast('Copy blocked by the browser'); });
+    } else {
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand('copy'); done(); } catch (e) { toast('Copy blocked by the browser'); }
+      document.body.removeChild(ta);
+    }
+  }
+
+  var audio = null;
+  function beep(bad) {
+    if (!settings.sound) { return; }
+    try {
+      audio = audio || new (window.AudioContext || window.webkitAudioContext)();
+      if (audio.state === 'suspended') { audio.resume(); }
+      var osc = audio.createOscillator();
+      var gain = audio.createGain();
+      osc.frequency.value = bad ? 220 : 1180;
+      osc.type = bad ? 'sawtooth' : 'sine';
+      gain.gain.setValueAtTime(0.0001, audio.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.14, audio.currentTime + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.0001, audio.currentTime + (bad ? 0.22 : 0.09));
+      osc.connect(gain).connect(audio.destination);
+      osc.start();
+      osc.stop(audio.currentTime + (bad ? 0.24 : 0.11));
+    } catch (e) { /* audio is a nicety, never a failure */ }
+  }
+
+  function loadSettings() {
+    try {
+      var saved = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}');
+      Object.keys(settings).forEach(function (k) {
+        if (saved[k] !== undefined) { settings[k] = saved[k]; }
+      });
+    } catch (e) { /* first run, or storage blocked */ }
+  }
+
+  function saveSettings() {
+    try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch (e) { /* ignore */ }
+  }
+
+  // ---- turning input into a read ---------------------------------------
+
+  function commitText(text, source) {
+    var trimmed = String(text || '').trim();
+    if (trimmed.length < MIN_CHARS) { return; }
+
+    var parsed = W.parseScan(trimmed, settings.input);
+    if (!parsed) {
+      showError(trimmed, source);
+      return;
+    }
+
+    if (parsed.kind === 'split') {
+      addRead({
+        fc: parsed.fc, cn: parsed.cn, formatShort: 'reader-supplied',
+        formatName: 'Facility code and card number sent by the reader',
+        parity: null, bits: 0, hex: null, dec: null, raw: null,
+        source: source, sample: trimmed
+      });
+      return;
+    }
+    if (parsed.kind === 'cn') {
+      addRead({
+        fc: null, cn: parsed.cn, formatShort: 'card number only',
+        formatName: 'Card number only - reader sends no facility code',
+        parity: null, bits: 0, hex: null, dec: parsed.cn.toString(), raw: null,
+        source: source, sample: trimmed
+      });
+      return;
+    }
+    commitValue(parsed.raw, parsed.containerBits, source, trimmed);
+  }
+
+  function commitValue(raw, containerBits, source, sample) {
+    var formatId = settings.format === 'auto' ? W.detect(raw, containerBits) : settings.format;
+    var decoded = W.decode(raw, formatId);
+    decoded.raw = raw;
+    decoded.source = source;
+    decoded.sample = sample;
+    decoded.guessed = settings.format === 'auto';
+    decoded.alternates = W.alternates(raw, formatId, 3);
+    addRead(decoded);
+  }
+
+  function readKey(read) {
+    return (read.raw !== null && read.raw !== undefined)
+      ? 'r' + read.raw.toString(16)
+      : 'v' + read.fc + '/' + read.cn;
+  }
+
+  function addRead(read) {
+    var now = new Date();
+    read.at = now;
+    read.count = 1;
+    read.id = ++seq;
+    read.key = readKey(read);
+
+    var prev = reads[0];
+    if (settings.dedupe && prev && prev.key === read.key && now - prev.at < REPEAT_MS) {
+      // Reader is repeating while the card is held against it - not a new scan.
+      prev.count += 1;
+      prev.at = now;
+      render();
+      return;
+    }
+
+    reads.unshift(read);
+    if (reads.length > MAX_ROWS) { reads.length = MAX_ROWS; }
+    beep(read.parity === false);
+    render(true);
+  }
+
+  function showError(text, source) {
+    var id = ++seq;
+    reads.unshift({
+      error: true, at: new Date(), count: 1, id: id, key: 'e' + id,
+      sample: text, source: source
+    });
+    beep(true);
+    render(true);
+  }
+
+  // ---- rendering -------------------------------------------------------
+
+  function tag(text, cls, copyText, label) {
+    var span = document.createElement(copyText ? 'button' : 'span');
+    span.className = 'tag' + (cls ? ' ' + cls : '') + (copyText ? ' copyable' : '');
+    span.textContent = text;
+    if (copyText) {
+      span.title = 'Click to copy';
+      span.addEventListener('click', function () { copy(copyText, label); });
+    }
+    return span;
+  }
+
+  function render(isNew) {
+    renderCurrent(isNew);
+    renderHistory();
+    el.count.textContent = reads.length ? reads.length + (reads.length === 1 ? ' read' : ' reads') : '';
+  }
+
+  function renderCurrent(isNew) {
+    var read = reads[0];
+    var box = el.current;
+    box.classList.toggle('error', !!(read && read.error));
+
+    if (!read) {
+      box.innerHTML = '<div class="waiting"><strong>Waiting for a scan</strong>'
+        + '<span class="sub">Tap a fob or card on the reader. Nothing to click — '
+        + 'just keep this window focused.</span></div>';
+      return;
+    }
+
+    box.innerHTML = '';
+
+    if (read.error) {
+      var err = document.createElement('div');
+      err.className = 'waiting';
+      err.innerHTML = '<strong>Could not read that scan</strong>'
+        + '<span class="sub">Got <code></code> — not a number this app knows how to parse. '
+        + 'Try a different "Reader sends" setting below.</span>';
+      err.querySelector('code').textContent = read.sample;
+      box.appendChild(err);
+      return;
+    }
+
+    var readout = document.createElement('div');
+    readout.className = 'readout';
+    readout.appendChild(field('Facility code', read.fc, 'Facility code'));
+    readout.appendChild(field('Card number', read.cn, 'Card number'));
+    box.appendChild(readout);
+
+    var meta = document.createElement('div');
+    meta.className = 'meta';
+    meta.appendChild(tag(read.formatShort + (read.guessed ? ' (guess)' : '')));
+    if (read.bits) { meta.appendChild(tag(read.bits + ' bits')); }
+    if (read.parity === true) { meta.appendChild(tag('parity ok', 'ok')); }
+    if (read.parity === false) { meta.appendChild(tag('parity failed', 'bad')); }
+    if (read.oversize) { meta.appendChild(tag('too wide for this format', 'warn')); }
+    if (read.hex) { meta.appendChild(tag('hex ' + read.hex, '', read.hex, 'Hex')); }
+    if (read.dec) { meta.appendChild(tag('dec ' + read.dec, '', read.dec, 'Decimal')); }
+    meta.appendChild(tag(read.source));
+    meta.appendChild(tag(clockTime(read.at)));
+    if (read.count > 1) { meta.appendChild(tag('×' + read.count + ' (held)')); }
+    box.appendChild(meta);
+
+    if (read.alternates && read.alternates.length) {
+      var alts = document.createElement('div');
+      alts.className = 'alts';
+      alts.appendChild(document.createTextNode('Or, read as: '));
+      read.alternates.forEach(function (alt) {
+        var b = document.createElement('button');
+        b.className = 'alt';
+        b.textContent = alt.formatShort + ' → '
+          + (alt.fc === null ? 'no FC' : 'FC ' + alt.fc) + ', card ' + alt.cn;
+        b.title = 'Lock the reader to ' + alt.formatName;
+        b.addEventListener('click', function () {
+          settings.format = alt.formatId;
+          el.format.value = alt.formatId;
+          saveSettings();
+          // Re-decode the current read under the format just picked. The
+          // repeat-merge would otherwise swallow it if this card was the last
+          // one scanned twice.
+          var merging = settings.dedupe;
+          settings.dedupe = false;
+          reads.shift();
+          commitValue(read.raw, 0, read.source, read.sample);
+          settings.dedupe = merging;
+          toast('Format locked to ' + alt.formatName);
+        });
+        alts.appendChild(b);
+      });
+      box.appendChild(alts);
+    }
+
+    if (isNew) {
+      box.classList.remove('flash');
+      void box.offsetWidth;
+      box.classList.add('flash');
+    }
+  }
+
+  function field(label, value, copyLabel) {
+    var wrap = document.createElement('div');
+    wrap.className = 'field';
+    var l = document.createElement('span');
+    l.className = 'label';
+    l.textContent = label;
+    var b = document.createElement('button');
+    b.className = 'value' + (value === null || value === undefined ? ' none' : '');
+    b.textContent = (value === null || value === undefined) ? 'not in this format' : groupDigits(value);
+    if (value !== null && value !== undefined) {
+      b.title = 'Click to copy';
+      b.addEventListener('click', function () { copy(String(value), copyLabel); });
+    }
+    wrap.appendChild(l);
+    wrap.appendChild(b);
+    return wrap;
+  }
+
+  function renderHistory() {
+    var older = reads.slice(1);
+    el.history.innerHTML = '';
+
+    if (!older.length) {
+      var li = document.createElement('li');
+      li.className = 'placeholder';
+      li.textContent = reads.length
+        ? 'Scan another card and this one drops down here.'
+        : 'Previous reads will stack up here.';
+      el.history.appendChild(li);
+      return;
+    }
+
+    older.forEach(function (read) {
+      var li = document.createElement('li');
+
+      var time = document.createElement('span');
+      time.className = 'time';
+      time.textContent = clockTime(read.at);
+      li.appendChild(time);
+
+      if (read.error) {
+        var note = document.createElement('span');
+        note.className = 'empty-note';
+        note.style.gridColumn = '2 / -1';
+        note.textContent = 'unreadable: ' + read.sample;
+        li.appendChild(note);
+        el.history.appendChild(li);
+        return;
+      }
+
+      li.appendChild(numCell('Facility', read.fc === null ? '–' : groupDigits(read.fc), read.fc));
+      li.appendChild(numCell('Card number', groupDigits(read.cn), read.cn));
+
+      var fmt = document.createElement('span');
+      fmt.className = 'fmt';
+      fmt.textContent = read.formatShort + (read.hex ? ' · ' + read.hex : '');
+      if (read.parity === false) { fmt.textContent += ' · parity!'; }
+      li.appendChild(fmt);
+
+      var rpt = document.createElement('span');
+      rpt.className = 'rpt';
+      rpt.textContent = read.count > 1 ? '×' + read.count : '';
+      li.appendChild(rpt);
+
+      el.history.appendChild(li);
+    });
+  }
+
+  function numCell(label, text, copyValue) {
+    var span = document.createElement('span');
+    span.className = 'num';
+    var small = document.createElement('small');
+    small.textContent = label;
+    span.appendChild(small);
+    span.appendChild(document.createTextNode(text));
+    if (copyValue !== null && copyValue !== undefined) {
+      span.style.cursor = 'copy';
+      span.title = 'Click to copy';
+      span.addEventListener('click', function () { copy(String(copyValue), label); });
+    }
+    return span;
+  }
+
+  function setStatus(text, cls) {
+    el.status.className = 'pill' + (cls ? ' ' + cls : '');
+    el.status.innerHTML = '<span class="dot"></span>';
+    el.status.appendChild(document.createTextNode(text));
+  }
+
+  function refreshStatus() {
+    var extra = [];
+    if (hidDevice) { extra.push('HID: ' + (hidDevice.productName || 'reader')); }
+    if (serialPort) { extra.push('serial'); }
+    setStatus('Listening' + (extra.length ? ' · ' + extra.join(' · ') : ' for keystrokes'), 'live');
+  }
+
+  // ---- keyboard wedge --------------------------------------------------
+
+  var WEDGE_CHARS = /^[0-9a-fA-F,;:\/|\- ]$/;
+
+  // Every key the page sees, including ones the scan filter drops. This is the
+  // one honest answer to "is my reader reaching the browser at all?" - a reader
+  // sending unexpected characters shows up here even though it never parses.
+  function noteKey(key) {
+    wedgeKeys += 1;
+    wedgeTail = (wedgeTail + (key.length === 1 ? key : '\u27e8' + key + '\u27e9')).slice(-44);
+    renderWedgeMonitor();
+  }
+
+  function renderWedgeMonitor() {
+    el.wedgeMonitor.textContent = wedgeKeys
+      ? wedgeKeys + (wedgeKeys === 1 ? ' key' : ' keys') + ' seen · last: ' + wedgeTail
+      : 'Nothing yet. If your reader types, tap a card with this window focused — '
+        + 'characters appear here even when they do not parse as a card.';
+  }
+
+  function onKeyDown(e) {
+    if (e.ctrlKey || e.metaKey || e.altKey) { return; }
+    var t = e.target;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA')) { return; }
+
+    if (e.key.length === 1 || e.key === 'Enter' || e.key === 'Tab') { noteKey(e.key); }
+
+    if (e.key === 'Enter' || e.key === 'Tab') {
+      if (buffer) {
+        e.preventDefault();
+        flushBuffer();
+      }
+      return;
+    }
+    if (e.key.length !== 1 || !WEDGE_CHARS.test(e.key)) { return; }
+
+    var now = Date.now();
+    if (now - lastKeyAt > GAP_MS) { buffer = ''; }
+    buffer += e.key;
+    lastKeyAt = now;
+
+    // Readers that send no Enter still stop typing; the silence ends the scan.
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(flushBuffer, IDLE_MS);
+  }
+
+  function flushBuffer() {
+    clearTimeout(idleTimer);
+    var text = buffer;
+    buffer = '';
+    if (text) { commitText(text, 'keyboard'); }
+  }
+
+  // ---- WebHID ----------------------------------------------------------
+
+  function hidSupported() { return !!navigator.hid; }
+
+  function hex16(n) { return '0x' + Number(n).toString(16).toUpperCase().padStart(4, '0'); }
+
+  // Enough USB vendor IDs to answer "is this thing even a card reader?".
+  // reader:false entries are the ones that keep turning up in the picker
+  // because every PC has one plugged in.
+  var VENDORS = {
+    0x046d: { name: 'Logitech', reader: false },
+    0x045e: { name: 'Microsoft', reader: false },
+    0x413c: { name: 'Dell', reader: false },
+    0x03f0: { name: 'HP', reader: false },
+    0x30fa: { name: 'generic input device', reader: false },
+    0x1050: { name: 'Yubico', reader: false },
+    0x076b: { name: 'HID Global / OMNIKEY', reader: true },
+    0x0c27: { name: 'RF IDeas', reader: true },
+    0x04e6: { name: 'SCM Microsystems', reader: true },
+    0x072f: { name: 'Advanced Card Systems', reader: true },
+    0x08e6: { name: 'Gemalto / Thales', reader: true },
+    0x0dc3: { name: 'Athena Smartcard', reader: true }
+  };
+
+  // A card reader has no reason to report a mouse, a keyboard, or media keys.
+  function looksLikeInputDevice(collections) {
+    return collections.some(function (c) {
+      return (c.usagePage === 0x01 && (c.usage === 0x02 || c.usage === 0x06 || c.usage === 0x01))
+        || c.usagePage === 0x07 || (c.usagePage === 0x0c && c.usage === 0x01);
+    });
+  }
+
+  // Names the top-level collections a device exposes, which is what tells you
+  // whether you picked the reader or the wireless dongle next to it.
+  function usageName(page, usage) {
+    if (page >= 0xff00) { return 'vendor-defined'; }
+    if (page === 0x01) {
+      return ({ 0x02: 'mouse', 0x04: 'joystick', 0x05: 'gamepad', 0x06: 'keyboard',
+        0x07: 'keypad', 0x80: 'system control' })[usage] || 'generic desktop';
+    }
+    return ({ 0x07: 'keyboard/keypad', 0x08: 'LEDs', 0x0c: 'consumer control',
+      0x0d: 'digitizer', 0xf1d0: 'security key' })[page] || 'usage page ' + hex16(page);
+  }
+
+  function hidLine(text, cls) {
+    var div = document.createElement('div');
+    div.className = 'devnote' + (cls ? ' ' + cls : '');
+    div.textContent = text;
+    return div;
+  }
+
+  function renderHidDetails(gaveUpWaiting) {
+    el.hidNote.innerHTML = '';
+    if (!hidDevice) { return; }
+
+    var vendor = VENDORS[hidDevice.vendorId];
+    el.hidNote.appendChild(hidLine((hidDevice.productName || 'Unnamed device')
+      + '  ·  vendor ' + hex16(hidDevice.vendorId)
+      + (vendor ? ' (' + vendor.name + ')' : '')
+      + '  ·  product ' + hex16(hidDevice.productId)));
+
+    var collections = hidDevice.collections || [];
+    if (collections.length) {
+      el.hidNote.appendChild(hidLine('Readable collections: ' + collections.map(function (c) {
+        return usageName(c.usagePage, c.usage) + ' (' + hex16(c.usagePage) + '/' + hex16(c.usage) + ')';
+      }).join(', ')));
+    } else {
+      // Chrome strips keyboard and mouse collections from WebHID so pages can't
+      // keylog. Nothing readable left means this is one of those devices.
+      el.hidNote.appendChild(hidLine('No readable collections. Chrome hides keyboard and mouse '
+        + 'devices from WebHID, so nothing will ever arrive from this one.', 'warn-note'));
+    }
+
+    // Say this straight away rather than after ten seconds of waiting: the
+    // device itself already proves it is not a reader.
+    if (vendor && vendor.reader === false) {
+      el.hidNote.appendChild(hidLine(vendor.name + ' does not make card readers. This is almost '
+        + 'certainly a wireless receiver or input device — disconnect it and tap a card with '
+        + 'this window focused instead.', 'warn-note'));
+    } else if (looksLikeInputDevice(collections)) {
+      el.hidNote.appendChild(hidLine('This device reports mouse, keyboard or media-key collections, '
+        + 'which card readers do not have. Almost certainly not your reader.', 'warn-note'));
+    }
+
+    el.hidNote.appendChild(hidLine(hidReports
+      ? 'Reports received: ' + hidReports
+      : 'Waiting for the first report — tap a card on the reader.'));
+
+    if (gaveUpWaiting && !hidReports) {
+      el.hidNote.appendChild(hidLine('Nothing arrived in 10 seconds. This is probably not the reader, '
+        + 'or the reader is a keyboard-wedge type. Disconnect and tap a card with this window '
+        + 'focused — check the keystroke line above to see if anything is reaching the page.', 'warn-note'));
+    }
+  }
+
+  function attachHid(device) {
+    hidDevice = device;
+    hidReports = 0;
+    device.addEventListener('inputreport', onHidReport);
+    el.hidBtn.textContent = 'Disconnect HID reader';
+    renderHidDetails(false);
+    clearTimeout(hidSilenceTimer);
+    hidSilenceTimer = setTimeout(function () { renderHidDetails(true); }, 10000);
+    refreshStatus();
+  }
+
+  function onHidReport(event) {
+    var bytes = Array.from(new Uint8Array(event.data.buffer));
+    var full = bytes.map(function (b) { return b.toString(16).toUpperCase().padStart(2, '0'); }).join(' ');
+    hidReports += 1;
+    clearTimeout(hidSilenceTimer);
+    renderHidDetails(false);
+    el.hidNote.appendChild(hidLine('Last report (id ' + event.reportId + '): ' + full));
+
+    // Readers pad reports with zero bytes; strip them so the value width
+    // reflects the card, not the report size.
+    var start = 0;
+    while (start < bytes.length && bytes[start] === 0) { start++; }
+    var end = bytes.length;
+    while (end > start && bytes[end - 1] === 0) { end--; }
+    var payload = bytes.slice(start, end);
+    if (!payload.length) { return; }
+
+    commitValue(W.bytesToValue(payload), payload.length * 8, 'usb-hid', full);
+  }
+
+  async function toggleHid() {
+    if (hidDevice) {
+      clearTimeout(hidSilenceTimer);
+      try { await hidDevice.close(); } catch (e) { /* already gone */ }
+      hidDevice.removeEventListener('inputreport', onHidReport);
+      hidDevice = null;
+      el.hidBtn.textContent = 'Connect HID reader';
+      el.hidNote.innerHTML = '';
+      refreshStatus();
+      return;
+    }
+    if (!hidSupported()) {
+      toast('This browser has no WebHID. Use Chrome or Edge.');
+      return;
+    }
+    try {
+      var devices = await navigator.hid.requestDevice({ filters: [] });
+      if (!devices.length) { return; }
+      await devices[0].open();
+      attachHid(devices[0]);
+    } catch (err) {
+      el.hidNote.innerHTML = '';
+      el.hidNote.appendChild(hidLine('Could not open device: ' + err.message
+        + ' — a reader the OS has claimed as a keyboard or as a smartcard reader '
+        + 'cannot be opened this way.', 'warn-note'));
+    }
+  }
+
+  async function reconnectHid() {
+    if (!hidSupported()) { return; }
+    try {
+      var granted = await navigator.hid.getDevices();
+      for (var i = 0; i < granted.length; i++) {
+        try {
+          await granted[i].open();
+          attachHid(granted[i]);
+          return;
+        } catch (e) { /* try the next one */ }
+      }
+    } catch (e) { /* no permission yet */ }
+  }
+
+  // ---- WebSerial -------------------------------------------------------
+
+  async function toggleSerial() {
+    if (serialPort) {
+      if (serialAbort) { serialAbort.abort(); }
+      try { await serialPort.close(); } catch (e) { /* already closed */ }
+      serialPort = null;
+      el.serialBtn.textContent = 'Connect serial reader';
+      el.serialNote.textContent = '';
+      refreshStatus();
+      return;
+    }
+    if (!navigator.serial) {
+      toast('This browser has no Web Serial. Use Chrome or Edge.');
+      return;
+    }
+    try {
+      var port = await navigator.serial.requestPort();
+      await port.open({ baudRate: Number(el.baud.value) || 9600 });
+      serialPort = port;
+      el.serialBtn.textContent = 'Disconnect serial reader';
+      el.serialNote.textContent = 'Open at ' + el.baud.value + ' baud.';
+      refreshStatus();
+      readSerialLoop(port);
+    } catch (err) {
+      el.serialNote.textContent = 'Could not open port: ' + err.message;
+    }
+  }
+
+  async function readSerialLoop(port) {
+    serialAbort = new AbortController();
+    var decoder = new TextDecoderStream();
+    port.readable.pipeTo(decoder.writable, { signal: serialAbort.signal }).catch(function () { /* closed */ });
+    var reader = decoder.readable.getReader();
+    var pending = '';
+    try {
+      for (;;) {
+        var chunk = await reader.read();
+        if (chunk.done) { break; }
+        pending += chunk.value;
+        var lines = pending.split(/[\r\n]+/);
+        pending = lines.pop();
+        lines.forEach(function (line) {
+          if (line.trim()) { commitText(line, 'serial'); }
+        });
+      }
+    } catch (err) {
+      el.serialNote.textContent = 'Serial read stopped: ' + err.message;
+    } finally {
+      try { reader.releaseLock(); } catch (e) { /* ignore */ }
+    }
+  }
+
+  // ---- export ----------------------------------------------------------
+
+  function toCsv() {
+    var rows = [['time', 'facility_code', 'card_number', 'format', 'raw_hex', 'raw_decimal', 'parity', 'repeats']];
+    reads.forEach(function (r) {
+      if (r.error) { return; }
+      rows.push([
+        r.at.toISOString(),
+        r.fc === null ? '' : r.fc.toString(),
+        r.cn.toString(),
+        r.formatShort,
+        r.hex || '',
+        r.dec || '',
+        r.parity === null ? '' : (r.parity ? 'ok' : 'failed'),
+        r.count
+      ]);
+    });
+    return rows.map(function (row) { return row.join(','); }).join('\n');
+  }
+
+  // ---- boot ------------------------------------------------------------
+
+  function bindControls() {
+    W.FORMATS.forEach(function (f) {
+      var opt = document.createElement('option');
+      opt.value = f.id;
+      opt.textContent = f.name;
+      opt.title = f.note || '';
+      el.format.appendChild(opt);
+    });
+
+    el.input.value = settings.input;
+    el.format.value = settings.format;
+    el.sound.checked = settings.sound;
+    el.dedupe.checked = settings.dedupe;
+
+    el.input.addEventListener('change', function () {
+      settings.input = el.input.value;
+      saveSettings();
+      el.input.blur();
+    });
+    el.format.addEventListener('change', function () {
+      settings.format = el.format.value;
+      saveSettings();
+      el.format.blur();
+    });
+    el.sound.addEventListener('change', function () {
+      settings.sound = el.sound.checked;
+      saveSettings();
+      if (settings.sound) { beep(false); }
+    });
+    el.dedupe.addEventListener('change', function () {
+      settings.dedupe = el.dedupe.checked;
+      saveSettings();
+    });
+
+    el.manual.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') {
+        commitText(el.manual.value, 'typed');
+        el.manual.value = '';
+      }
+    });
+
+    el.clear.addEventListener('click', function () {
+      reads = [];
+      render();
+      toast('List cleared');
+    });
+    el.copyAll.addEventListener('click', function () {
+      if (!reads.length) { toast('Nothing to copy yet'); return; }
+      copy(toCsv(), 'Copied ' + reads.length + ' reads as CSV');
+    });
+    el.sample.addEventListener('click', function () {
+      // A real 26-bit value: facility code 123, card number 45678.
+      var fc = 123, cn = 45678 + Math.floor(Math.random() * 3);
+      var data = (BigInt(fc) << 16n) | BigInt(cn);
+      var ones = function (v) { return (v.toString(2).match(/1/g) || []).length; };
+      var raw = (BigInt(ones(data >> 12n) % 2) << 25n) | (data << 1n) | BigInt((ones(data & 0xfffn) % 2) ^ 1);
+      commitValue(raw, 32, 'sample', raw.toString());
+    });
+
+    el.hidBtn.addEventListener('click', toggleHid);
+    el.serialBtn.addEventListener('click', toggleSerial);
+    if (!hidSupported()) { el.hidBtn.disabled = true; el.hidNote.textContent = 'WebHID needs Chrome or Edge.'; }
+    if (!navigator.serial) { el.serialBtn.disabled = true; el.serialNote.textContent = 'Web Serial needs Chrome or Edge.'; }
+  }
+
+  function init() {
+    ['current', 'history', 'status', 'count', 'toast', 'input', 'format', 'sound',
+      'dedupe', 'manual', 'clear', 'copyAll', 'sample', 'hidBtn', 'hidNote',
+      'serialBtn', 'serialNote', 'baud', 'wedgeMonitor'].forEach(function (id) { el[id] = $(id); });
+
+    loadSettings();
+    bindControls();
+    render();
+    renderWedgeMonitor();
+    refreshStatus();
+
+    window.addEventListener('keydown', onKeyDown, true);
+
+    // A control left focused by a mouse click eats the reader's keystrokes: the
+    // Enter that terminates a scan re-activates the button, and digits vanish
+    // into a select's typeahead. Drop focus after a pointer click only —
+    // keyboard activation (detail === 0) keeps it, so tabbing still works.
+    document.addEventListener('click', function (e) {
+      if (e.detail === 0 || !e.target.closest) { return; }
+      var control = e.target.closest('button, select');
+      if (control) { control.blur(); }
+    });
+    window.addEventListener('blur', function () {
+      setStatus('Window not focused — scans go elsewhere', 'bad');
+    });
+    window.addEventListener('focus', refreshStatus);
+    if (navigator.hid) {
+      navigator.hid.addEventListener('disconnect', function (e) {
+        if (hidDevice && e.device === hidDevice) {
+          clearTimeout(hidSilenceTimer);
+          hidDevice = null;
+          el.hidBtn.textContent = 'Connect HID reader';
+          el.hidNote.innerHTML = '';
+          el.hidNote.appendChild(hidLine('Reader unplugged.'));
+          refreshStatus();
+        }
+      });
+    }
+    reconnectHid();
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+})();
+</script>
+</body>
+</html>
