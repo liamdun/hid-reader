@@ -70,7 +70,29 @@ what matters is only how it hands that stream to the PC:
 | **PC/SC smartcard** — OMNIKEY in CCID mode, iCLASS/SEOS readers. | **No.** No browser exposes PC/SC, and the OS driver owns the device so WebHID can't claim it either. Needs a native helper. |
 
 If your reader types the card number into Notepad, it is a keyboard wedge and
-this app already works with it. That is also the mode worth switching a reader
+this app already works with it.
+
+### Reference hardware: HID OMNIKEY 5427 CK
+
+The reader this was built against. "CK" is *contactless keyboard*: it has two
+personalities, and which one it is in decides everything.
+
+- **Keyboard wedge** — enumerates as a USB keyboard and types the card data.
+  Works here with nothing to connect.
+- **CCID / PC-SC** — enumerates as a smartcard reader that the operating
+  system's driver owns. No browser can reach it.
+
+Either way the **Connect HID reader** button is useless for this model: in wedge
+mode Chrome hides it because it is a keyboard, and in CCID mode the smartcard
+driver has already claimed it. It will never appear in the WebHID picker.
+
+Card personalization software generally drives this reader over PC/SC, so a
+reader that is in daily use for programming is probably in CCID mode. HID's
+OMNIKEY Workbench utility switches personalities — but switching to wedge mode
+can stop the personalization software finding the reader, so check whether your
+firmware offers a combined mode before changing a working station.
+
+Tap a card in Notepad to tell the two apart: characters mean wedge mode. That is also the mode worth switching a reader
 into if it supports both — it is the only one with no browser caveats.
 
 ## Reading the output
