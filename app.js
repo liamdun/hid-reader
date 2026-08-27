@@ -32,6 +32,10 @@
   var lastKeyAt = 0;
   var idleTimer = null;
   var hidDevice = null;
+  var hidReports = 0;
+  var hidSilenceTimer = null;
+  var wedgeKeys = 0;
+  var wedgeTail = '';
   var serialPort = null;
   var serialAbort = null;
 
@@ -388,10 +392,28 @@
 
   var WEDGE_CHARS = /^[0-9a-fA-F,;:\/|\- ]$/;
 
+  // Every key the page sees, including ones the scan filter drops. This is the
+  // one honest answer to "is my reader reaching the browser at all?" - a reader
+  // sending unexpected characters shows up here even though it never parses.
+  function noteKey(key) {
+    wedgeKeys += 1;
+    wedgeTail = (wedgeTail + (key.length === 1 ? key : '\u27e8' + key + '\u27e9')).slice(-44);
+    renderWedgeMonitor();
+  }
+
+  function renderWedgeMonitor() {
+    el.wedgeMonitor.textContent = wedgeKeys
+      ? wedgeKeys + (wedgeKeys === 1 ? ' key' : ' keys') + ' seen · last: ' + wedgeTail
+      : 'Nothing yet. If your reader types, tap a card with this window focused — '
+        + 'characters appear here even when they do not parse as a card.';
+  }
+
   function onKeyDown(e) {
     if (e.ctrlKey || e.metaKey || e.altKey) { return; }
     var t = e.target;
     if (t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA')) { return; }
+
+    if (e.key.length === 1 || e.key === 'Enter' || e.key === 'Tab') { noteKey(e.key); }
 
     if (e.key === 'Enter' || e.key === 'Tab') {
       if (buffer) {
@@ -423,19 +445,75 @@
 
   function hidSupported() { return !!navigator.hid; }
 
+  function hex16(n) { return '0x' + Number(n).toString(16).toUpperCase().padStart(4, '0'); }
+
+  // Names the top-level collections a device exposes, which is what tells you
+  // whether you picked the reader or the wireless dongle next to it.
+  function usageName(page, usage) {
+    if (page >= 0xff00) { return 'vendor-defined'; }
+    if (page === 0x01) {
+      return ({ 0x02: 'mouse', 0x04: 'joystick', 0x05: 'gamepad', 0x06: 'keyboard',
+        0x07: 'keypad', 0x80: 'system control' })[usage] || 'generic desktop';
+    }
+    return ({ 0x07: 'keyboard/keypad', 0x08: 'LEDs', 0x0c: 'consumer control',
+      0x0d: 'digitizer', 0xf1d0: 'security key' })[page] || 'usage page ' + hex16(page);
+  }
+
+  function hidLine(text, cls) {
+    var div = document.createElement('div');
+    div.className = 'devnote' + (cls ? ' ' + cls : '');
+    div.textContent = text;
+    return div;
+  }
+
+  function renderHidDetails(gaveUpWaiting) {
+    el.hidNote.innerHTML = '';
+    if (!hidDevice) { return; }
+
+    el.hidNote.appendChild(hidLine((hidDevice.productName || 'Unnamed device')
+      + '  ·  vendor ' + hex16(hidDevice.vendorId) + '  ·  product ' + hex16(hidDevice.productId)));
+
+    var collections = hidDevice.collections || [];
+    if (collections.length) {
+      el.hidNote.appendChild(hidLine('Readable collections: ' + collections.map(function (c) {
+        return usageName(c.usagePage, c.usage) + ' (' + hex16(c.usagePage) + '/' + hex16(c.usage) + ')';
+      }).join(', ')));
+    } else {
+      // Chrome strips keyboard and mouse collections from WebHID so pages can't
+      // keylog. Nothing readable left means this is one of those devices.
+      el.hidNote.appendChild(hidLine('No readable collections. Chrome hides keyboard and mouse '
+        + 'devices from WebHID, so nothing will ever arrive from this one.', 'warn-note'));
+    }
+
+    el.hidNote.appendChild(hidLine(hidReports
+      ? 'Reports received: ' + hidReports
+      : 'Waiting for the first report — tap a card on the reader.'));
+
+    if (gaveUpWaiting && !hidReports) {
+      el.hidNote.appendChild(hidLine('Nothing arrived in 10 seconds. This is probably not the reader, '
+        + 'or the reader is a keyboard-wedge type. Disconnect and tap a card with this window '
+        + 'focused — check the keystroke line above to see if anything is reaching the page.', 'warn-note'));
+    }
+  }
+
   function attachHid(device) {
     hidDevice = device;
+    hidReports = 0;
     device.addEventListener('inputreport', onHidReport);
-    el.hidNote.textContent = 'Connected: ' + (device.productName || 'unnamed')
-      + ' (vendor 0x' + device.vendorId.toString(16) + ', product 0x' + device.productId.toString(16) + ')';
     el.hidBtn.textContent = 'Disconnect HID reader';
+    renderHidDetails(false);
+    clearTimeout(hidSilenceTimer);
+    hidSilenceTimer = setTimeout(function () { renderHidDetails(true); }, 10000);
     refreshStatus();
   }
 
   function onHidReport(event) {
     var bytes = Array.from(new Uint8Array(event.data.buffer));
     var full = bytes.map(function (b) { return b.toString(16).toUpperCase().padStart(2, '0'); }).join(' ');
-    el.hidNote.textContent = 'Last report (id ' + event.reportId + '): ' + full;
+    hidReports += 1;
+    clearTimeout(hidSilenceTimer);
+    renderHidDetails(false);
+    el.hidNote.appendChild(hidLine('Last report (id ' + event.reportId + '): ' + full));
 
     // Readers pad reports with zero bytes; strip them so the value width
     // reflects the card, not the report size.
@@ -451,11 +529,12 @@
 
   async function toggleHid() {
     if (hidDevice) {
+      clearTimeout(hidSilenceTimer);
       try { await hidDevice.close(); } catch (e) { /* already gone */ }
       hidDevice.removeEventListener('inputreport', onHidReport);
       hidDevice = null;
       el.hidBtn.textContent = 'Connect HID reader';
-      el.hidNote.textContent = '';
+      el.hidNote.innerHTML = '';
       refreshStatus();
       return;
     }
@@ -469,8 +548,10 @@
       await devices[0].open();
       attachHid(devices[0]);
     } catch (err) {
-      el.hidNote.textContent = 'Could not open device: ' + err.message
-        + ' (a reader claimed by the OS as a keyboard or smartcard reader cannot be opened this way).';
+      el.hidNote.innerHTML = '';
+      el.hidNote.appendChild(hidLine('Could not open device: ' + err.message
+        + ' — a reader the OS has claimed as a keyboard or as a smartcard reader '
+        + 'cannot be opened this way.', 'warn-note'));
     }
   }
 
@@ -631,11 +712,12 @@
   function init() {
     ['current', 'history', 'status', 'count', 'toast', 'input', 'format', 'sound',
       'dedupe', 'manual', 'clear', 'copyAll', 'sample', 'hidBtn', 'hidNote',
-      'serialBtn', 'serialNote', 'baud'].forEach(function (id) { el[id] = $(id); });
+      'serialBtn', 'serialNote', 'baud', 'wedgeMonitor'].forEach(function (id) { el[id] = $(id); });
 
     loadSettings();
     bindControls();
     render();
+    renderWedgeMonitor();
     refreshStatus();
 
     window.addEventListener('keydown', onKeyDown, true);
@@ -656,9 +738,11 @@
     if (navigator.hid) {
       navigator.hid.addEventListener('disconnect', function (e) {
         if (hidDevice && e.device === hidDevice) {
+          clearTimeout(hidSilenceTimer);
           hidDevice = null;
           el.hidBtn.textContent = 'Connect HID reader';
-          el.hidNote.textContent = 'Reader unplugged.';
+          el.hidNote.innerHTML = '';
+          el.hidNote.appendChild(hidLine('Reader unplugged.'));
           refreshStatus();
         }
       });

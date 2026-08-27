@@ -66,6 +66,13 @@
     </div>
 
     <div class="row">
+      <div class="ctl" style="flex:1 1 100%">
+        <label>Keystrokes reaching this page</label>
+        <div class="devnote" id="wedgeMonitor"></div>
+      </div>
+    </div>
+
+    <div class="row">
       <div class="ctl">
         <label>Non-keyboard readers</label>
         <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
@@ -76,7 +83,12 @@
             <option>57600</option><option>115200</option>
           </select>
         </div>
-        <div class="devnote" id="hidNote"></div>
+        <span class="hint" style="max-width:none">The picker lists every HID device on the PC, not
+          just readers. Yours is usually named for its maker — RFIDeas, HID Global, OMNIKEY.
+          Names like “USB receiver” or “USB Input Device” are normally a wireless dongle or a
+          plain keyboard; Chrome hides keyboard and mouse devices from WebHID, so picking one
+          connects but never reads anything.</span>
+        <div id="hidNote"></div>
         <div class="devnote" id="serialNote"></div>
       </div>
     </div>
