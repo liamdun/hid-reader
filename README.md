@@ -28,29 +28,33 @@ folder over https (GitHub Pages is enough).
 
 ## Hosting it
 
-`npm run build` writes a deployable `dist/`: `index.html` (the whole app inlined
-into one request), a `fob-reader.html` copy under a download-friendly name, and
-a `_headers` file that stops the page being served from cache — so a fix reaches
-the reader desk without anyone copying a file around.
+Pushing to the default branch runs the tests, builds the site, and force-pushes
+it to the `gh-pages` branch. So a fix reaches the reader desk without anyone
+copying a file around.
 
-**Cloudflare Pages** works with this repo while it stays private, and needs no
-build tooling beyond Node:
+**One-time setup**, which needs a repo admin and cannot be done from CI —
+GitHub's own workflow token is not allowed to create a Pages site
+(`Resource not accessible by integration`), and pushing a `gh-pages` branch no
+longer turns Pages on by itself:
 
-1. Cloudflare dashboard → **Workers & Pages** → **Create** → **Pages** →
-   **Connect to Git**, and pick this repo.
-2. Framework preset **None**, build command `npm run build`, output directory
-   `dist`, production branch `claude/azure-fob-reader-app-yffw1m`.
-3. Deploy. Every push to that branch redeploys automatically.
+> **Settings → Pages → Build and deployment → Source: Deploy from a branch →
+> Branch: `gh-pages` / `(root)` → Save**
 
-The resulting `*.pages.dev` URL is public even though the repo is private. That
-is harmless here — the app has no backend and stores nothing — but Cloudflare
-Access will put it behind a login if you would rather it weren't.
+After that the site is at <https://liamdun.github.io/hid-reader/> and every push
+redeploys it. Pages serves HTML with a ten-minute cache, so a fresh deploy can
+take that long to appear; a hard reload skips the wait.
 
-**GitHub Pages** is the alternative, with one catch: Pages on a private repo
-needs a paid GitHub plan. Make the repo public and it is free.
+`npm run build` writes the same site to `dist/` locally: `index.html` with the
+whole app inlined into one request, a `fob-reader.html` copy under a
+download-friendly name, and a `_headers` file that Cloudflare Pages honours and
+GitHub Pages ignores.
 
-Either way the site is served over https, which is what WebHID and Web Serial
-need — so a hosted copy can do things the single downloaded file cannot.
+**Cloudflare Pages** remains an option, and is the one that works on a private
+repo: connect the repo, framework preset **None**, build command `npm run build`,
+output directory `dist`.
+
+Either host serves over https, which is what WebHID and Web Serial need — so a
+hosted copy can do things the single downloaded file cannot.
 
 ## Will my reader work?
 
