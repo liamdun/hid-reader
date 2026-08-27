@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fob Reader</title>
+<link rel="stylesheet" href="styles.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='14' font-size='14'>&#128179;</text></svg>">
+</head>
+<body>
+
+<header>
+  <h1>Fob Reader</h1>
+  <span class="pill" id="status"><span class="dot"></span>Starting…</span>
+  <span class="spacer"></span>
+  <span class="pill" id="count"></span>
+</header>
+
+<main>
+  <section class="current" id="current"></section>
+
+  <div class="list-head">
+    <h2>Previous reads</h2>
+    <span class="spacer"></span>
+    <button class="ghost" id="copyAll">Copy all as CSV</button>
+    <button class="ghost" id="clear">Clear list</button>
+  </div>
+  <ol class="history" id="history"></ol>
+
+  <section class="controls">
+    <h2>Reader setup</h2>
+
+    <div class="row">
+      <div class="ctl">
+        <label for="input">Reader sends</label>
+        <select id="input">
+          <option value="auto">Auto-detect</option>
+          <option value="dec">A decimal number</option>
+          <option value="hex">A hex number</option>
+          <option value="split">Facility code and card number, separated</option>
+          <option value="cn">Card number only</option>
+        </select>
+        <span class="hint">Auto reads anything with A–F as hex. Force hex if your reader
+          sends hex digits that happen to all be 0–9.</span>
+      </div>
+
+      <div class="ctl">
+        <label for="format">Card format</label>
+        <select id="format">
+          <option value="auto">Auto-detect (guess from the value)</option>
+        </select>
+        <span class="hint">Leave on auto until you see a wrong split, then lock it —
+          or click one of the “Or, read as” chips on a read.</span>
+      </div>
+
+      <div class="ctl">
+        <label for="manual">Paste or type a value</label>
+        <input id="manual" size="22" placeholder="e.g. 2004E5A7, then Enter" autocomplete="off">
+      </div>
+    </div>
+
+    <div class="row">
+      <label class="check"><input type="checkbox" id="sound"> Beep on each read</label>
+      <label class="check"><input type="checkbox" id="dedupe"> Merge repeats while a card is held</label>
+      <button class="ghost" id="sample">Try a sample scan</button>
+    </div>
+
+    <div class="row">
+      <div class="ctl">
+        <label>Non-keyboard readers</label>
+        <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+          <button id="hidBtn">Connect HID reader</button>
+          <button id="serialBtn">Connect serial reader</button>
+          <select id="baud" title="Serial baud rate">
+            <option>9600</option><option>19200</option><option>38400</option>
+            <option>57600</option><option>115200</option>
+          </select>
+        </div>
+        <div class="devnote" id="hidNote"></div>
+        <div class="devnote" id="serialNote"></div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <p><strong>Keyboard-wedge readers need no setup.</strong> If your reader types the card
+  number into a text box in any other program, it works here — keep this window focused and
+  tap a card. Nothing to click.</p>
+  <p><strong>WebHID / Web Serial</strong> are for readers that don’t type. They need Chrome
+  or Edge, and the page must be served over <code>https</code> or <code>localhost</code>.
+  A reader Windows has claimed as a keyboard or as a PC/SC smartcard reader can’t be opened
+  this way — use keyboard mode for the former; the latter needs a native helper, no browser
+  can reach it.</p>
+  <p>Reads are held in memory only. Refreshing the page clears the list.</p>
+</footer>
+
+<div class="toast" id="toast"></div>
+
+<script src="wiegand.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

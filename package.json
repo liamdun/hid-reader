@@ -1,0 +1,12 @@
+{
+  "name": "hid-reader",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Continuous-read web app for HID prox fobs and cards - shows facility code and card number with no clicking",
+  "scripts": {
+    "start": "node tools/serve.js",
+    "test": "node --test test/*.test.js",
+    "build": "node tools/build-single.js"
+  },
+  "license": "MIT"
+}
