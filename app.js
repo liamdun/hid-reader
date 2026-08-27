@@ -447,6 +447,32 @@
 
   function hex16(n) { return '0x' + Number(n).toString(16).toUpperCase().padStart(4, '0'); }
 
+  // Enough USB vendor IDs to answer "is this thing even a card reader?".
+  // reader:false entries are the ones that keep turning up in the picker
+  // because every PC has one plugged in.
+  var VENDORS = {
+    0x046d: { name: 'Logitech', reader: false },
+    0x045e: { name: 'Microsoft', reader: false },
+    0x413c: { name: 'Dell', reader: false },
+    0x03f0: { name: 'HP', reader: false },
+    0x30fa: { name: 'generic input device', reader: false },
+    0x1050: { name: 'Yubico', reader: false },
+    0x076b: { name: 'HID Global / OMNIKEY', reader: true },
+    0x0c27: { name: 'RF IDeas', reader: true },
+    0x04e6: { name: 'SCM Microsystems', reader: true },
+    0x072f: { name: 'Advanced Card Systems', reader: true },
+    0x08e6: { name: 'Gemalto / Thales', reader: true },
+    0x0dc3: { name: 'Athena Smartcard', reader: true }
+  };
+
+  // A card reader has no reason to report a mouse, a keyboard, or media keys.
+  function looksLikeInputDevice(collections) {
+    return collections.some(function (c) {
+      return (c.usagePage === 0x01 && (c.usage === 0x02 || c.usage === 0x06 || c.usage === 0x01))
+        || c.usagePage === 0x07 || (c.usagePage === 0x0c && c.usage === 0x01);
+    });
+  }
+
   // Names the top-level collections a device exposes, which is what tells you
   // whether you picked the reader or the wireless dongle next to it.
   function usageName(page, usage) {
@@ -470,8 +496,11 @@
     el.hidNote.innerHTML = '';
     if (!hidDevice) { return; }
 
+    var vendor = VENDORS[hidDevice.vendorId];
     el.hidNote.appendChild(hidLine((hidDevice.productName || 'Unnamed device')
-      + '  ·  vendor ' + hex16(hidDevice.vendorId) + '  ·  product ' + hex16(hidDevice.productId)));
+      + '  ·  vendor ' + hex16(hidDevice.vendorId)
+      + (vendor ? ' (' + vendor.name + ')' : '')
+      + '  ·  product ' + hex16(hidDevice.productId)));
 
     var collections = hidDevice.collections || [];
     if (collections.length) {
@@ -483,6 +512,17 @@
       // keylog. Nothing readable left means this is one of those devices.
       el.hidNote.appendChild(hidLine('No readable collections. Chrome hides keyboard and mouse '
         + 'devices from WebHID, so nothing will ever arrive from this one.', 'warn-note'));
+    }
+
+    // Say this straight away rather than after ten seconds of waiting: the
+    // device itself already proves it is not a reader.
+    if (vendor && vendor.reader === false) {
+      el.hidNote.appendChild(hidLine(vendor.name + ' does not make card readers. This is almost '
+        + 'certainly a wireless receiver or input device — disconnect it and tap a card with '
+        + 'this window focused instead.', 'warn-note'));
+    } else if (looksLikeInputDevice(collections)) {
+      el.hidNote.appendChild(hidLine('This device reports mouse, keyboard or media-key collections, '
+        + 'which card readers do not have. Almost certainly not your reader.', 'warn-note'));
     }
 
     el.hidNote.appendChild(hidLine(hidReports
