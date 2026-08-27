@@ -26,6 +26,32 @@ Or open `index.html` straight from disk. Keyboard-wedge readers work in all
 three; WebHID and Web Serial want a real origin, so use `npm start` or host the
 folder over https (GitHub Pages is enough).
 
+## Hosting it
+
+`npm run build` writes a deployable `dist/`: `index.html` (the whole app inlined
+into one request), a `fob-reader.html` copy under a download-friendly name, and
+a `_headers` file that stops the page being served from cache — so a fix reaches
+the reader desk without anyone copying a file around.
+
+**Cloudflare Pages** works with this repo while it stays private, and needs no
+build tooling beyond Node:
+
+1. Cloudflare dashboard → **Workers & Pages** → **Create** → **Pages** →
+   **Connect to Git**, and pick this repo.
+2. Framework preset **None**, build command `npm run build`, output directory
+   `dist`, production branch `claude/azure-fob-reader-app-yffw1m`.
+3. Deploy. Every push to that branch redeploys automatically.
+
+The resulting `*.pages.dev` URL is public even though the repo is private. That
+is harmless here — the app has no backend and stores nothing — but Cloudflare
+Access will put it behind a login if you would rather it weren't.
+
+**GitHub Pages** is the alternative, with one catch: Pages on a private repo
+needs a paid GitHub plan. Make the repo public and it is free.
+
+Either way the site is served over https, which is what WebHID and Web Serial
+need — so a hosted copy can do things the single downloaded file cannot.
+
 ## Will my reader work?
 
 HID's card technology is proprietary, but that stops at the reader. Once the

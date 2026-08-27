@@ -1,9 +1,15 @@
 'use strict';
 /*
- * Inline the stylesheet and scripts into one portable HTML file.
- * Handy for emailing the tool to a colleague or dropping it on a shared drive:
- * the single file works straight from the filesystem, keyboard-wedge readers
- * included. (WebHID and Web Serial still want a real https/localhost origin.)
+ * Inline the stylesheet and scripts into one portable HTML file, and lay out
+ * dist/ as a deployable static site.
+ *
+ *   dist/index.html      what a host serves - one request, no assets to lose
+ *   dist/fob-reader.html the same page under a download-friendly name
+ *   dist/_headers        Cloudflare Pages: never serve a stale copy
+ *
+ * The single file also works straight from the filesystem, so it can be
+ * emailed or dropped on a shared drive. (WebHID and Web Serial still want a
+ * real https/localhost origin.)
  */
 const fs = require('fs');
 const path = require('path');
@@ -22,7 +28,23 @@ for (const leftover of ['styles.css"', 'wiegand.js"', 'app.js"']) {
   }
 }
 
-fs.mkdirSync(path.join(root, 'dist'), { recursive: true });
-const out = path.join(root, 'dist', 'fob-reader.html');
-fs.writeFileSync(out, inlined);
-console.log('Wrote ' + path.relative(root, out) + ' (' + Math.round(inlined.length / 1024) + ' KB)');
+// The point of hosting this is that a fix reaches the reader desk without
+// anyone copying a file around, so the page must never be served from cache.
+const headers = `/*
+  Referrer-Policy: no-referrer
+  X-Content-Type-Options: nosniff
+
+/
+  Cache-Control: no-cache
+
+/*.html
+  Cache-Control: no-cache
+`;
+
+const dist = path.join(root, 'dist');
+fs.mkdirSync(dist, { recursive: true });
+fs.writeFileSync(path.join(dist, 'index.html'), inlined);
+fs.writeFileSync(path.join(dist, 'fob-reader.html'), inlined);
+fs.writeFileSync(path.join(dist, '_headers'), headers);
+console.log('Wrote dist/ (index.html, fob-reader.html, _headers) - '
+  + Math.round(inlined.length / 1024) + ' KB per page');
