@@ -92,7 +92,49 @@ OMNIKEY Workbench utility switches personalities — but switching to wedge mode
 can stop the personalization software finding the reader, so check whether your
 firmware offers a combined mode before changing a working station.
 
-Tap a card in Notepad to tell the two apart: characters mean wedge mode. That is also the mode worth switching a reader
+Tap a card in Notepad to tell the two apart: characters mean wedge mode.
+
+#### Why CCID mode cannot be reached from a browser
+
+No web API exposes PC/SC on Windows, and this is a platform gap rather than a
+gap in this app:
+
+- The **Web Smart Card API** (`navigator.smartCard`) exists, but it is available
+  only to Isolated Web Apps, and only on ChromeOS. It is not implemented on
+  Windows, macOS or Linux.
+- **WebUSB** cannot claim the interface, because the operating system's
+  smartcard driver already owns it. Rebinding it needs administrator rights.
+- **WebHID** never sees the reader: in CCID mode it presents no HID interface,
+  and in keyboard wedge mode Chrome hides it because it is a keyboard.
+- Java applets, the old answer, died with NPAPI.
+
+Every working browser-plus-smartcard product therefore ships a native helper.
+That is not a workaround anyone skipped — it is the only route the platform
+leaves open.
+
+#### Getting facility code and card number out of wedge mode
+
+Keyboard wedge mode is not limited to the card serial number. Its **PACS Custom**
+output parses the PACS payload into separate fields — facility code, card
+number, site code, OEM code — and types them with a separator and terminator of
+your choosing. The reader does the decoding, and this app's "Facility code and
+card number, separated" input mode reads the result directly.
+
+Two constraints shape any plan around that:
+
+- **The modes are mutually exclusive.** CCID cannot operate while keyboard wedge
+  is active. A reader switched to wedge stops existing as a PC/SC device, so
+  personalization software will not find it at all.
+- **Switching does not have to mean installing anything.** Configuration lives
+  in the reader, not the PC, and HID's documented deployment path is to build a
+  configuration on one machine with OMNIKEY Workbench and apply it to other
+  readers with a **configuration card** — tapped on the reader, no software on
+  the target PC, and it persists across machines.
+
+There is one documented direction that needs no tooling at all, and it is the
+unhelpful one: a HID Set Feature Report of `0xA5 0x5A` on report ID `0x00`
+switches a reader from wedge mode back to CCID. Going the other way is an
+abstraction-layer command over CCID, which needs PC/SC access. That is also the mode worth switching a reader
 into if it supports both — it is the only one with no browser caveats.
 
 ## Reading the output
